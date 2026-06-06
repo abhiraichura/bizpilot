@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BizPilot Admin</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh}
+.header{background:#064e3b;padding:16px 24px;display:flex;justify-content:space-between;align-items:center}
+.logo{font-size:20px;font-weight:700;color:#fff}
+.logo span{color:#6ee7b7}
+.auth-screen{display:flex;align-items:center;justify-content:center;min-height:100vh}
+.auth-box{background:#1e293b;border-radius:16px;padding:40px;width:360px;border:1px solid #334155}
+.auth-title{font-size:22px;font-weight:700;color:#fff;margin-bottom:8px}
+.auth-sub{font-size:13px;color:#94a3b8;margin-bottom:24px}
+input{width:100%;padding:10px 14px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:14px;outline:none;margin-bottom:12px}
+input:focus{border-color:#059669}
+button{padding:10px 20px;border:none;border-radius:8px;cursor:pointer;font-weight:600;font-size:13px;transition:opacity 0.15s}
+button:hover{opacity:0.85}
+.btn-primary{background:#059669;color:#fff}
+.btn-danger{background:#dc2626;color:#fff}
+.btn-sm{padding:5px 12px;font-size:12px}
+.btn-secondary{background:#334155;color:#e2e8f0}
+.main{padding:24px;max-width:1200px;margin:0 auto}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:24px}
+.stat-card{background:#1e293b;border-radius:12px;padding:16px;border:1px solid #334155}
+.stat-label{font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px}
+.stat-val{font-size:28px;font-weight:700;color:#fff;margin:4px 0}
+.stat-sub{font-size:11px;color:#64748b}
+.section{background:#1e293b;border-radius:12px;border:1px solid #334155;overflow:hidden;margin-bottom:20px}
+.section-header{padding:14px 16px;border-bottom:1px solid #334155;display:flex;justify-content:space-between;align-items:center}
+.section-title{font-size:13px;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;padding:10px 16px;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #334155;background:#0f172a}
+td{padding:12px 16px;font-size:13px;color:#e2e8f0;border-bottom:1px solid #1e293b}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#263148}
+.badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700}
+.badge-green{background:#065f46;color:#6ee7b7}
+.badge-red{background:#7f1d1d;color:#fca5a5}
+.badge-blue{background:#1e3a5f;color:#93c5fd}
+.badge-amber{background:#78350f;color:#fcd34d}
+.type-badges{medical_shop:'💊',kirana:'🏪',restaurant:'🍽️',textile_trader:'🧵',contractor:'🏗️'}
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100;align-items:center;justify-content:center}
+.modal.open{display:flex}
+.modal-box{background:#1e293b;border-radius:16px;padding:28px;width:100%;max-width:560px;border:1px solid #334155;max-height:80vh;overflow-y:auto}
+.modal-title{font-size:16px;font-weight:700;color:#fff;margin-bottom:16px}
+.conv-item{padding:8px 12px;border-radius:8px;margin-bottom:6px;font-size:12px;line-height:1.5}
+.conv-in{background:#1a2744;color:#93c5fd;text-align:left}
+.conv-out{background:#064e3b;color:#6ee7b7;text-align:right}
+.conv-meta{font-size:10px;opacity:.6;margin-top:2px}
+.search-bar{padding:8px 16px;border-bottom:1px solid #334155}
+.search-bar input{margin:0;background:#0f172a}
+.filter-row{display:flex;gap:8px;padding:8px 16px;border-bottom:1px solid #334155;flex-wrap:wrap}
+select{padding:6px 10px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#e2e8f0;font-size:12px;outline:none}
+.loading{text-align:center;padding:40px;color:#64748b}
+.error{background:#7f1d1d;color:#fca5a5;padding:12px 16px;border-radius:8px;font-size:13px;margin-bottom:16px}
+</style>
+</head>
+<body>
+
+<div id="auth-screen" class="auth-screen">
+  <div class="auth-box">
+    <div class="auth-title">🤖 BizPilot Admin</div>
+    <div class="auth-sub">Enter your admin secret to continue</div>
+    <input type="password" id="secret-input" placeholder="Admin secret key" onkeydown="if(event.key==='Enter')login()">
+    <input type="text" id="api-url-input" placeholder="API URL (e.g. https://bizpilot.railway.app)" value="">
+    <div id="auth-error" class="error" style="display:none"></div>
+    <button class="btn-primary" onclick="login()" style="width:100%">Login</button>
+  </div>
+</div>
+
+<div id="main-app" style="display:none">
+  <div class="header">
+    <div class="logo">🤖 BizPilot <span>Admin</span></div>
+    <div style="display:flex;gap:10px;align-items:center">
+      <span id="header-stats" style="font-size:12px;color:#6ee7b7"></span>
+      <button class="btn-secondary btn-sm" onclick="refresh()">↻ Refresh</button>
+      <button class="btn-secondary btn-sm" onclick="logout()">Logout</button>
+    </div>
+  </div>
+  <div class="main">
+    <div class="stats-grid" id="stats-grid"><div class="loading">Loading stats...</div></div>
+
+    <div class="section">
+      <div class="section-header">
+        <div class="section-title">All Businesses</div>
+        <div style="display:flex;gap:8px">
+          <input type="text" id="search" placeholder="Search..." style="width:160px;margin:0;padding:6px 10px;font-size:12px" oninput="filterTable()">
+          <select id="type-filter" onchange="filterTable()">
+            <option value="">All Types</option>
+            <option value="medical_shop">💊 Medical</option>
+            <option value="kirana">🏪 Kirana</option>
+            <option value="restaurant">🍽️ Restaurant</option>
+            <option value="textile_trader">🧵 Textile</option>
+            <option value="contractor">🏗️ Contractor</option>
+          </select>
+          <select id="status-filter" onchange="filterTable()">
+            <option value="">All Status</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
+        </div>
+      </div>
+      <div id="table-container"><div class="loading">Loading businesses...</div></div>
+    </div>
+  </div>
+</div>
+
+<div id="activity-modal" class="modal">
+  <div class="modal-box">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <div class="modal-title" id="modal-title">Business Activity</div>
+      <button class="btn-secondary btn-sm" onclick="closeModal()">✕ Close</button>
+    </div>
+    <div id="modal-content"></div>
+  </div>
+</div>
+
+<script>
+let SECRET = '', API_URL = '', allBusinesses = [];
+
+const EMOJIS = { medical_shop:'💊', kirana:'🏪', restaurant:'🍽️', textile_trader:'🧵', contractor:'🏗️' };
+const TYPE_NAMES = { medical_shop:'Medical Shop', kirana:'Kirana', restaurant:'Restaurant', textile_trader:'Textile', contractor:'Contractor' };
+
+function login() {
+  const s = document.getElementById('secret-input').value.trim();
+  const u = document.getElementById('api-url-input').value.trim().replace(/\/$/, '');
+  if (!s || !u) { showAuthError('Enter both secret and API URL'); return; }
+  SECRET = s; API_URL = u;
+  localStorage.setItem('bp_secret', s);
+  localStorage.setItem('bp_url', u);
+  document.getElementById('auth-screen').style.display = 'none';
+  document.getElementById('main-app').style.display = 'block';
+  refresh();
+}
+
+function logout() {
+  SECRET = ''; API_URL = '';
+  localStorage.removeItem('bp_secret');
+  localStorage.removeItem('bp_url');
+  location.reload();
+}
+
+function showAuthError(msg) {
+  const el = document.getElementById('auth-error');
+  el.style.display = 'block';
+  el.textContent = msg;
+}
+
+async function api(path) {
+  const r = await fetch(API_URL + path, { headers: { 'x-admin-secret': SECRET } });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
+
+async function refresh() {
+  loadStats();
+  loadBusinesses();
+}
+
+async function loadStats() {
+  try {
+    const d = await api('/admin/stats');
+    const grid = document.getElementById('stats-grid');
+    grid.innerHTML = `
+      <div class="stat-card"><div class="stat-label">Total Businesses</div><div class="stat-val">${d.total_businesses}</div><div class="stat-sub">All time</div></div>
+      <div class="stat-card"><div class="stat-label">Active</div><div class="stat-val" style="color:#6ee7b7">${d.active_businesses}</div><div class="stat-sub">Paying clients</div></div>
+      <div class="stat-card"><div class="stat-label">New (7 days)</div><div class="stat-val" style="color:#93c5fd">${d.new_last_7_days}</div><div class="stat-sub">Recent signups</div></div>
+      <div class="stat-card"><div class="stat-label">30-day Volume</div><div class="stat-val" style="color:#fcd34d">₹${Number(d.month_sales_volume).toLocaleString('en-IN')}</div><div class="stat-sub">Client sales</div></div>
+    `;
+    document.getElementById('header-stats').textContent = d.active_businesses + ' active clients';
+  } catch(e) { document.getElementById('stats-grid').innerHTML = '<div class="error">Failed to load stats: ' + e.message + '</div>'; }
+}
+
+async function loadBusinesses() {
+  try {
+    const d = await api('/admin/businesses');
+    allBusinesses = d.businesses || [];
+    renderTable(allBusinesses);
+  } catch(e) { document.getElementById('table-container').innerHTML = '<div class="error" style="margin:16px">Failed: ' + e.message + '</div>'; }
+}
+
+function filterTable() {
+  const search = document.getElementById('search').value.toLowerCase();
+  const type = document.getElementById('type-filter').value;
+  const status = document.getElementById('status-filter').value;
+  let filtered = allBusinesses.filter(function(b) {
+    const matchSearch = !search || b.name.toLowerCase().includes(search) || b.owner_name.toLowerCase().includes(search) || (b.city||'').toLowerCase().includes(search);
+    const matchType = !type || b.business_type === type;
+    const matchStatus = !status || (status === 'active' && b.subscription_active) || (status === 'inactive' && !b.subscription_active);
+    return matchSearch && matchType && matchStatus;
+  });
+  renderTable(filtered);
+}
+
+function renderTable(businesses) {
+  if (!businesses.length) {
+    document.getElementById('table-container').innerHTML = '<div class="loading">No businesses found</div>';
+    return;
+  }
+  const rows = businesses.map(function(b) {
+    const emoji = EMOJIS[b.business_type] || '🏢';
+    const typeName = TYPE_NAMES[b.business_type] || b.business_type;
+    const statusBadge = b.subscription_active && b.onboarding_complete
+      ? '<span class="badge badge-green">ACTIVE</span>'
+      : b.onboarding_complete
+        ? '<span class="badge badge-amber">INACTIVE</span>'
+        : '<span class="badge badge-blue">ONBOARDING</span>';
+    let trialInfo = '';
+    if (b.plan === 'trial' && b.trial_ends_at) {
+      const days = Math.ceil((new Date(b.trial_ends_at) - new Date()) / 864e5);
+      if (days <= 0) trialInfo = ' <span class="badge badge-red">EXPIRED</span>';
+      else if (days <= 3) trialInfo = ' <span class="badge badge-amber">' + days + 'd left</span>';
+      else trialInfo = ' <span style="font-size:11px;color:#64748b">' + days + 'd</span>';
+    }
+    const planBadge = '<span class="badge badge-blue">' + (b.plan||'trial').toUpperCase() + '</span>' + trialInfo;
+    const date = new Date(b.created_at).toLocaleDateString('en-IN');
+    return `<tr>
+      <td><div style="font-weight:600;color:#fff">${b.name}</div><div style="font-size:11px;color:#64748b">${b.owner_name}</div></td>
+      <td><div>${emoji} ${typeName}</div></td>
+      <td>${b.city || '—'}</td>
+      <td><div style="font-size:12px;color:#94a3b8">${b.owner_phone}</div></td>
+      <td>${statusBadge}</td>
+      <td>${planBadge}</td>
+      <td style="color:#64748b;font-size:12px">${date}</td>
+      <td>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn-secondary btn-sm" onclick="viewActivity('${b.id}','${b.name}')">Activity</button>
+          <button class="btn-secondary btn-sm" onclick="openDashboard('${b.id}')">Dashboard</button>
+          <button class="btn-secondary btn-sm" onclick="sendBulkReminder('${b.id}','${b.name}')">💬 Remind All</button>
+          <button class="${b.subscription_active ? 'btn-danger' : 'btn-primary'} btn-sm" onclick="toggleSub('${b.id}',${b.subscription_active})">${b.subscription_active ? 'Deactivate' : 'Activate'}</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('table-container').innerHTML = `
+    <table>
+      <thead><tr>
+        <th>Business</th><th>Type</th><th>City</th><th>Phone</th><th>Status</th><th>Plan</th><th>Joined</th><th>Actions</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+async function toggleSub(id, current) {
+  if (!confirm('Are you sure?')) return;
+  try {
+    await fetch(API_URL + '/admin/business/' + id, {
+      method: 'PATCH',
+      headers: { 'x-admin-secret': SECRET, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ subscription_active: !current })
+    });
+    refresh();
+  } catch(e) { alert('Failed: ' + e.message); }
+}
+
+function openDashboard(id) {
+  window.open(location.origin + '/dashboard/' + id, '_blank');
+}
+
+async function viewActivity(id, name) {
+  document.getElementById('modal-title').textContent = '📊 ' + name;
+  document.getElementById('modal-content').innerHTML = '<div class="loading">Loading...</div>';
+  document.getElementById('activity-modal').classList.add('open');
+  try {
+    const d = await api('/admin/business/' + id + '/activity');
+    const convs = (d.conversations || []);
+    const txns = (d.transactions || []);
+    let html = '<div style="margin-bottom:16px"><div style="font-size:12px;color:#94a3b8;margin-bottom:8px;font-weight:600">RECENT CONVERSATIONS</div>';
+    if (!convs.length) { html += '<div style="color:#64748b;font-size:12px">No conversations yet</div>'; }
+    else {
+      convs.slice(0,10).forEach(function(c) {
+        const cls = c.direction === 'inbound' ? 'conv-in' : 'conv-out';
+        const time = new Date(c.created_at).toLocaleTimeString('en-IN', {hour:'2-digit',minute:'2-digit'});
+        html += '<div class="conv-item ' + cls + '">' + escHtml(c.message_text) + '<div class="conv-meta">' + (c.direction==='inbound'?'👤 Owner':'🤖 BizPilot') + ' · ' + time + (c.intent?' · '+c.intent:'') + '</div></div>';
+      });
+    }
+    html += '</div><div><div style="font-size:12px;color:#94a3b8;margin-bottom:8px;font-weight:600">RECENT TRANSACTIONS</div>';
+    if (!txns.length) { html += '<div style="color:#64748b;font-size:12px">No transactions yet</div>'; }
+    else {
+      txns.slice(0,10).forEach(function(t) {
+        const col = t.direction==='in' ? '#6ee7b7' : '#fca5a5';
+        const pre = t.direction==='in' ? '+' : '-';
+        html += '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #334155;font-size:12px"><span style="color:#e2e8f0">' + escHtml(t.description) + '</span><span style="color:' + col + ';font-weight:700">' + pre + '₹' + Number(t.amount).toLocaleString('en-IN') + '</span></div>';
+      });
+    }
+    html += '</div>';
+    document.getElementById('modal-content').innerHTML = html;
+  } catch(e) { document.getElementById('modal-content').innerHTML = '<div class="error">Failed: ' + e.message + '</div>'; }
+}
+
+async function sendBulkReminder(id, name) {
+  if (!confirm('Send payment reminders to ALL customers of ' + name + ' who have outstanding balance?')) return;
+  try {
+    const r = await fetch(API_URL + '/api/notify/bulk-reminder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-admin-secret': SECRET },
+      body: JSON.stringify({ business_id: id })
+    });
+    const d = await r.json();
+    alert('Done! Sent ' + (d.sent || 0) + ' reminders out of ' + (d.total || 0) + ' customers.');
+  } catch(e) { alert('Failed: ' + e.message); }
+}
+
+function closeModal() { document.getElementById('activity-modal').classList.remove('open'); }
+function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// Auto-login from localStorage
+window.onload = function() {
+  const s = localStorage.getItem('bp_secret');
+  const u = localStorage.getItem('bp_url');
+  if (s && u) {
+    document.getElementById('secret-input').value = s;
+    document.getElementById('api-url-input').value = u;
+    SECRET = s; API_URL = u;
+    document.getElementById('auth-screen').style.display = 'none';
+    document.getElementById('main-app').style.display = 'block';
+    refresh();
+  }
+};
+
+document.getElementById('activity-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+</script>
+</body>
+</html>
