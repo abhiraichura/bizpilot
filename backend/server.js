@@ -17,26 +17,6 @@ const errorHandler = require('./error-handler');
 const tally = require('./tally');
 const notifications = require('./notifications');
 
-// In-memory deduplication to prevent Wati webhook retries causing spam
-const recentlyProcessed = new Set();
-function isDuplicate(messageId) {
-  if (!messageId) return false;
-  if (recentlyProcessed.has(messageId)) return true;
-  recentlyProcessed.add(messageId);
-  setTimeout(function() { recentlyProcessed.delete(messageId); }, 120000);
-  return false;
-}
-
-const phoneTimestamps = new Map();
-function isRateLimited(phone) {
-  const last = phoneTimestamps.get(phone) || 0;
-  const now = Date.now();
-  if (now - last < 3000) return true; // block if same phone within 3 seconds
-  phoneTimestamps.set(phone, now);
-  setTimeout(function() { phoneTimestamps.delete(phone); }, 10000);
-  return false;
-}
-
 const app = express();
 errorHandler.setupProcessHandlers();
 app.use(helmet());
@@ -69,14 +49,9 @@ app.post('/webhook/whatsapp', async function(req, res) {
     const { phone, messageId, type, text, mediaUrl } = parsed;
     if (!phone) return;
 
-    // Deduplicate - check in-memory first (fast), then database (slow)
-    if (isDuplicate(messageId)) {
-      logger.info('Duplicate blocked: ' + messageId);
-      return;
-    }
-
-    if (isRateLimited(phone)) {
-      logger.info('Rate limited: ' + phone);
+    // Deduplicate
+    if (messageId && await db.isMessageProcessed(messageId)) {
+      logger.info('Duplicate message ' + messageId);
       return;
     }
 
@@ -341,3 +316,129 @@ app.post('/api/notify/payment-reminder', async function(req, res) {
     if (!biz) return res.status(404).json({ error: 'Business not found' });
     const customer = await db.getOrCreateCustomer(business_id, customer_name);
     if (!customer) return res.status(404).json({ error: 'Customer not found' });
+    const result = await notifications.sendPaymentReminder(biz, customer, amount || customer.outstanding_balance);
+    res.json(result);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// Send to all outstanding customers
+app.post('/api/notify/bulk-reminder', async function(req, res) {
+  try {
+    const { business_id } = req.body;
+    if (!business_id) return res.status(400).json({ error: 'business_id required' });
+    const { data: biz } = await db.supabase.from('businesses').select('*').eq('id', business_id).single();
+    if (!biz) return res.status(404).json({ error: 'Business not found' });
+    const customers = await db.getOutstandingCustomers(business_id);
+    let sent = 0;
+    for (const c of customers) {
+      if (c.phone) {
+        await notifications.sendPaymentReminder(biz, c, c.outstanding_balance);
+        sent++;
+        await new Promise(function(r){ setTimeout(r, 1200); });
+      }
+    }
+    res.json({ sent, total: customers.length });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── TALLY INTEGRATION ─────────────────────────────────────
+
+// Test Tally connection for a business
+app.post('/api/tally/test', async function(req, res) {
+  try {
+    const { business_id, tally_url } = req.body;
+    if (!business_id || !tally_url) return res.status(400).json({ error: 'business_id and tally_url required' });
+    const result = await tally.testConnection(tally_url);
+    if (result.connected) {
+      // Save tally_url to business settings
+      const { data: biz } = await db.supabase.from('businesses').select('settings').eq('id', business_id).single();
+      const settings = biz ? (biz.settings || {}) : {};
+      settings.tally_url = tally_url;
+      await db.supabase.from('businesses').update({ settings }).eq('id', business_id);
+    }
+    res.json(result);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// Manually sync a transaction to Tally
+app.post('/api/tally/sync', async function(req, res) {
+  try {
+    const { business_id, transaction_id } = req.body;
+    const { data: biz } = await db.supabase.from('businesses').select('*').eq('id', business_id).single();
+    if (!biz || !biz.settings || !biz.settings.tally_url) return res.status(400).json({ error: 'Tally not configured for this business' });
+    const { data: txn } = await db.supabase.from('transactions').select('*').eq('id', transaction_id).single();
+    if (!txn) return res.status(404).json({ error: 'Transaction not found' });
+    const voucher = tally.mapTransactionToVoucher(txn, biz);
+    const result = await tally.pushToTally(biz.settings.tally_url, voucher);
+    res.json(result);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// Get Tally config status for a business
+app.get('/api/tally/status/:businessId', async function(req, res) {
+  try {
+    const { data: biz } = await db.supabase.from('businesses').select('settings, name').eq('id', req.params.businessId).single();
+    if (!biz) return res.status(404).json({ error: 'Not found' });
+    const tallyUrl = biz.settings && biz.settings.tally_url;
+    res.json({ configured: !!tallyUrl, tally_url: tallyUrl || null, business_name: biz.name });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── ADMIN API ─────────────────────────────────────────────
+// Simple secret-key protected admin endpoints
+// Set ADMIN_SECRET in your .env
+
+function adminAuth(req, res, next) {
+  const secret = req.headers['x-admin-secret'] || req.query.secret;
+  if (!process.env.ADMIN_SECRET || secret !== process.env.ADMIN_SECRET) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  next();
+}
+
+// All businesses list
+app.get('/admin/businesses', adminAuth, async function(req, res) {
+  try {
+    const { data } = await db.supabase.from('businesses').select('*').order('created_at', { ascending: false });
+    res.json({ businesses: data || [] });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// Business stats summary
+app.get('/admin/stats', adminAuth, async function(req, res) {
+  try {
+    const { data: businesses } = await db.supabase.from('businesses').select('id, name, business_type, created_at, subscription_active, onboarding_complete, city');
+    const { data: txns } = await db.supabase.from('transactions').select('amount, transaction_type, created_at').gte('created_at', new Date(Date.now() - 30*864e5).toISOString());
+    const total = (businesses || []).length;
+    const active = (businesses || []).filter(function(b){ return b.subscription_active && b.onboarding_complete; }).length;
+    const byType = {};
+    (businesses || []).forEach(function(b){ byType[b.business_type] = (byType[b.business_type]||0)+1; });
+    const monthSales = (txns || []).filter(function(t){ return t.transaction_type==='sale'; }).reduce(function(s,t){ return s+Number(t.amount); },0);
+    res.json({ total_businesses: total, active_businesses: active, by_type: byType, month_sales_volume: monthSales, new_last_7_days: (businesses||[]).filter(function(b){ return new Date(b.created_at) > new Date(Date.now()-7*864e5); }).length });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// Update business subscription
+app.patch('/admin/business/:id', adminAuth, async function(req, res) {
+  try {
+    const { subscription_active, plan } = req.body;
+    const updates = {};
+    if (subscription_active !== undefined) updates.subscription_active = subscription_active;
+    if (plan) updates.plan = plan;
+    const { data, error } = await db.supabase.from('businesses').update(updates).eq('id', req.params.id).select().single();
+    if (error) throw error;
+    res.json({ business: data });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// Business activity log
+app.get('/admin/business/:id/activity', adminAuth, async function(req, res) {
+  try {
+    const id = req.params.id;
+    const [convs, txns] = await Promise.all([
+      db.supabase.from('conversations').select('direction,message_text,intent,created_at').eq('business_id', id).order('created_at',{ascending:false}).limit(20),
+      db.supabase.from('transactions').select('*').eq('business_id', id).order('created_at',{ascending:false}).limit(20)
+    ]);
+    res.json({ conversations: convs.data||[], transactions: txns.data||[] });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
