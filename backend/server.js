@@ -1,3 +1,12 @@
+// In-memory deduplication to prevent Wati webhook retries causing spam
+const recentlyProcessed = new Set();
+function isDuplicate(messageId) {
+  if (!messageId) return false;
+  if (recentlyProcessed.has(messageId)) return true;
+  recentlyProcessed.add(messageId);
+  setTimeout(function() { recentlyProcessed.delete(messageId); }, 120000);
+  return false;
+}
 require('dotenv').config();
 const express = require('express');
 const helmet = require('helmet');
