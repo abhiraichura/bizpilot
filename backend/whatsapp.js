@@ -10,23 +10,23 @@ function normalizeForWati(phone) {
 async function sendMessage(phone, message) {
   const normalized = normalizeForWati(phone);
   try {
-    const url = process.env.WATI_API_ENDPOINT + '/api/v1/sendSessionMessage/' + normalized;
-    await axios.post(url, { messageText: message }, {
+    const url = process.env.WATI_API_ENDPOINT +
+      '/api/v1/sendSessionMessage/' + normalized +
+      '?messageText=' + encodeURIComponent(message);
+    const response = await axios.post(url, {}, {
       headers: {
         Authorization: 'Bearer ' + process.env.WATI_ACCESS_TOKEN,
         'Content-Type': 'application/json'
       }
     });
-    logger.info('Message sent to ' + normalized);
+    logger.info('Message sent to ' + normalized + ' result=' + JSON.stringify(response.data));
   } catch(e) {
     const status = e.response ? e.response.status : 'no_response';
     const data = e.response ? JSON.stringify(e.response.data) : e.message;
     logger.error('sendMessage failed status=' + status + ' body=' + data + ' phone=' + normalized);
     try { await sendNotification(phone, message); }
     catch(e2) {
-      const s2 = e2.response ? e2.response.status : 'no_response';
-      const d2 = e2.response ? JSON.stringify(e2.response.data) : e2.message;
-      logger.error('Fallback failed status=' + s2 + ' body=' + d2);
+      logger.error('Fallback failed: ' + e2.message);
     }
   }
 }
